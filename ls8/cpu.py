@@ -89,6 +89,19 @@ class CPU:
             )
             return False
 
+        # if the d is a list or dict then i want to make sure that I copy the
+        # whole d to a range of addresses using the starting address of `addy`
+        # if its not a list or a dict(like a hardcoded program)
+        # then justadd to that addy then return
+        if (isinstance(d, list)) or (isinstance(d, dict)):
+            # take each entry in d and append it to the ram
+            for i in range(len(d)):
+                self.ram[addy + i] = d[i]
+            return True
+        else:
+            self.ram[addy]
+            return True
+
         # should be unreachable code
         return False
 
