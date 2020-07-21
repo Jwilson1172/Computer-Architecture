@@ -1,4 +1,4 @@
-# LS-8 Microcomputer Spec v4.0
+LS-8 Microcomputer Spec v4.0
 
 ## Registers
 
@@ -286,7 +286,7 @@ Halt the CPU (and exit the emulator).
 
 Machine code:
 ```
-00000001 
+00000001
 01
 ```
 
