@@ -47,12 +47,73 @@ class CPU:
 
     def alu(self, op, reg_a, reg_b):
         """ALU operations."""
-
-        if op == "ADD":
-            self.reg[reg_a] += self.reg[reg_b]
-        #elif op == "SUB": etc
+        # CMP
+        if op == 0b10100111:
+            # adding the compare operation
+            if reg_a == reg_b:
+                self.fl = 0b00000001
+            elif reg_a > reg_b:
+                self.fl = 0b00000010
+            elif reg_a < reg_b:
+                self.fl = 0b00000100
+            else:
+                self.trace()
+                raise Exception("fault with CMP operation")
+        # AND
+        elif op == 0b10101000:
+            return reg_a & reg_b
+        # NOP
+        elif op == 0b00000000:
+            pass
+        # HLT
+        elif op == 0b00000001:
+            print("HALTING")
+            exit()
+        # LDI
+        elif op == 0b10000010:
+            # in this instance the second argument should be an int
+            reg_b == int(reg_b, 10)
+        # LD
+        elif op == 0b10000011:
+            # not sure what LD does going to implement later
+            pass
+        # ST
+        elif op == 0b10000100:
+            # again not sure what this does atm
+            pass
+        # PUSH
+        elif op == 0b01000101:
+            # this method should push a value onto a stack
+            # I think that the stack is R7 which is that stack pointer register
+            pass
+        # POP
+        elif op == 0b01000110:
+            #Same thing as push but instead its poping a value off of a stack
+            pass
+        # PRN
+        elif op == 0b01000111:
+            print(reg_a)
+            # PRA
+        elif op == 0B01001000:
+            # not sure what PRA does
+            pass
         else:
+            self.trace()
             raise Exception("Unsupported ALU operation")
+
+    def ram_read(self, address, upper_limit=1):
+        """Returns the Data that is stored in the ram at `address` and reads
+        `upper_limit` number of ram slots
+
+        Args:
+            address ([type]): [description]
+            upper_limit (int, optional): [description]. Defaults to 1.
+
+        Returns:
+            entries from the ram hashtable
+        """
+        # using some fancy slicing here
+        return self.RAM[address:(address + upper_limit)]
 
     def trace(self):
         """
@@ -80,13 +141,17 @@ class CPU:
 
         running = True
         while running:
-            if op == 'HLT':
-                running = False
-                break
-            op = input("input a command: ")
+
 
         return None
 
+class LS8IO():
+    def __init__(self, program_file: str, emulator: CPU):
+        if program_file[-3] != 'ls8':
+            print("please use an ls8 file type for the ls8 emulator")
+        self.file = open(program_file, 'rb')
+
+        return None
 
 if __name__ == '__main__':
     # For now, we've just hardcoded a program:
