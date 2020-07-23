@@ -66,6 +66,69 @@ class CPU:
         # global debugging toggle
         self.DBG = DBG
 
+    ###########################################################################
+    #                        Instructions                                     #
+    ###########################################################################
+    JMP = 0b01010100
+    JEQ = 0b01010101
+    JNE = 0b01010110
+    JGT = 0b01010111
+    JLT = 0b01011000
+    JLE = 0b01011001
+    JGE = 0b01011010
+    NOP = 0b00000000
+    HLT = 0b00000001
+    LDI = 0b10000010
+    LD = 0b10000011
+    ST = 0b10000100
+    PRN = 0b01000111
+    PUSH = 0b01000101
+    POP = 0b01000110
+    PRA = 0b01001000
+    CMP = 0b10100111
+
+    def cmp(self, reg_a, reg_b) -> None:
+        """This Function takes the regerister arguments and sets the flag register
+        accordingly see tyhe spec for a breakdown on the flags
+        """
+            # adding the compare operation
+        if reg_a == reg_b:
+            self.fl = 0b00000001
+        elif reg_a > reg_b:
+            self.fl = 0b00000010
+        elif reg_a < reg_b:
+            self.fl = 0b00000100
+        else:
+            self.trace()
+            raise Exception("fault with CMP operation")
+        return None
+
+    def jmp(self, address) -> None:
+        self.pc = address
+        return None
+
+    def nop(self, reg_a, reg_b):
+        return
+
+    def hlt(self, reg_a, reg_b):
+        exit()
+        return
+
+    def ldi(self, reg_a, reg_b):
+        reg_a = int(str(reg_b), 10)
+        return
+    def aand(self, reg_a, reg_b):
+        reg_a = reg_a & reg_b
+
+    self.dispach_table = {
+        JMP:self.jmp,
+        NOP:self.nop,
+        HLT:self.hlt,
+        LDI:self.ldi,
+        AND:self.aand,
+
+
+    }
     def load(self, p):
         """Load a program into memory."""
         # changing this number of the binary form of the int to I can have
@@ -96,10 +159,7 @@ class CPU:
 #           ALU OPPERATIONS                           #
 #######################################################
 
-# before you harp on me about the type(0b00) its a dirty way of
-# figuring out what the binary datatype is
-
-    def alu(self, op: type(0b00), reg_a, reg_b) -> type(None):
+    def alu(self, op: int, reg_a, reg_b) -> type(None):
         """ALU for the cpu that handles a veritity of operations preformed
         by the cpu, this method handles the `brains` of the cpu essentially
         Arguments:
@@ -117,53 +177,9 @@ class CPU:
         type(None)
         (ideally this isn't going to return anything just modify the state of the internal vars)
         """
-        # TODO
-        # I plan on making this a dispach table using hashtable mechanics
-        # to get O(1) lookup on executing the operators
-        # CMP
-        if op == 0b10100111:
-            # adding the compare operation
-            if reg_a == reg_b:
-                self.fl = 0b00000001
-            elif reg_a > reg_b:
-                self.fl = 0b00000010
-            elif reg_a < reg_b:
-                self.fl = 0b00000100
-            else:
-                self.trace()
-                raise Exception("fault with CMP operation")
         # AND
-        elif op == 0b10101000:
+        elif op == :
             reg_a = reg_a & reg_b
-        # NOP
-        elif op == 0b00000000:
-            # very litterally no operation
-            pass
-        # HLT
-        elif op == 0b00000001:
-            print("HALTING")
-            if self.DBG:
-                print("dumping ram:\n")
-                self.dump_ram()
-                print("dumping registers")
-                self.dump_registers()
-                print("printing out a full trace")
-                self.trace()
-            exit()
-        # LDI
-        elif op == 0b10000010:
-            # the LDI operation takes the inteager value that is givin as a
-            # second argument
-            if isinstance(reg_b, int):
-                # going to add the int value to the first register as a binary
-                # representation of the integer value that is passed
-                reg_a[self.PC] = int(reg_b, base=2)
-                # increment the PC by one to denote that there has been a change
-                self.PC += 1
-            else:
-                raise ValueError(
-                    "the value of reg_b must be an integer for LDI\
-                    to work properly")
 
         # LD
         elif op == 0b10000011:
