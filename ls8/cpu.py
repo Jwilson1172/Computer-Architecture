@@ -1,6 +1,8 @@
 """CPU functionality."""
 
 import sys
+
+
 class Stack():
     def __init__(self, num: int) -> None:
         """set the size of the with the num argument"""
@@ -23,30 +25,95 @@ class Stack():
     def size(self):
         return len(self.stack)
 
+
 class CPU:
     """Main CPU class."""
-    def __init__(self):
+
+    # by default I want to make RAM 256 bytes this is the default for the ls-8
+    # I also wanted to leave the option open for increasing the ram_size to
+    # something larger to hold larger programs/stacks
+    def __init__(self, DBG=False, ram_size=256, cores=1):
         """Construct a new CPU."""
         # program counter
         # the location of the currently executing program
-        self.PC
-        # Instruction Register
-        # holds a copy of PC
-        self.IR
-        # initalize the hash table that will be acting as ram
-        self.RAM = {k:None for k in range(256)}
+        if cores > 1:
+            # this is added because at some point i would like to implement
+            # a multiprocessing solution to this class
+            raise NotImplementedError("this feature is not implemented please\
+                please just use one core for now")
 
+        # set to NOP by default
+        self.pc = 0b00000000
+        # the IR register is just going to hold a copy of the PC reg
+        self.ir = self.pc
+
+        # stack pointer is going to be init to 0 but will change later in
+        # self.run()
+        self.sp = 4
+
+        # general pourpose registry for holding the arguments for alu
+        # operations
+        self.reg = [] * 8
+
+        # initalize the hash table that will be acting as ram
+        self.RAM = {k: None for k in range(ram_size)}
+
+        # global debugging toggle
+        self.DBG = DBG
 
     def load(self, p):
         """Load a program into memory."""
-        address = 0
+        # changing this number of the binary form of the int to I can have
+        # consitencey in the program execution
+        address = 0b00
 
         for instruction in p:
             self.ram[address] = instruction
             address += 1
 
-    def alu(self, op, reg_a, reg_b):
-        """ALU operations."""
+    def load_file(self, fn):
+        """Loads a .ls8 file from disk and runs it
+
+        Args:
+            fn: the name of the file to load into memory
+        """
+        address = 0b00
+        with open(fn, 'rt') as f:
+            for line in f:
+                try:
+                    line = line.split("#", 1)[0]
+                    line = int(line, base=2)
+                    self.RAM[address] = line
+                    address += 1
+                except ValueError:
+                    pass
+#######################################################
+#           ALU OPPERATIONS                           #
+#######################################################
+
+# before you harp on me about the type(0b00) its a dirty way of
+# figuring out what the binary datatype is
+
+    def alu(self, op: type(0b00), reg_a, reg_b) -> type(None):
+        """ALU for the cpu that handles a veritity of operations preformed
+        by the cpu, this method handles the `brains` of the cpu essentially
+        Arguments:
+        -----------
+        `reg_a` : the first register to take from
+        `reg_b` : the second register to act on
+        `op` : a binary opperator that tells the alu what to execute
+
+        * for CMP and some of the other operators this isn't nessisarly the case
+        for instance during a LDI(op code: 0b10000010) operation the reg_b is
+        the integer value that is going to be put on the reg_a aka op argument:
+        iiiiiiii
+        Returns:
+        ------------
+        type(None)
+        (ideally this isn't going to return anything just modify the state of the internal vars)
+        """
+        self.IR = self.PC
+        self.r[0] = self.r[1]
         # CMP
         if op == 0b10100111:
             # adding the compare operation
@@ -61,22 +128,42 @@ class CPU:
                 raise Exception("fault with CMP operation")
         # AND
         elif op == 0b10101000:
-            return reg_a & reg_b
+            reg_a = reg_a & reg_b
         # NOP
         elif op == 0b00000000:
+            # very litterally no operation
             pass
         # HLT
         elif op == 0b00000001:
             print("HALTING")
+            if self.DBG:
+                print("dumping ram:\n")
+                self.dump_ram()
+                print("dumping registers")
+                self.dump_registers()
+                print("printing out a full trace")
+                self.trace()
             exit()
         # LDI
         elif op == 0b10000010:
-            # in this instance the second argument should be an int
-            reg_b == int(reg_b, 10)
+            # the LDI operation takes the inteager value that is givin as a
+            # second argument
+            if isinstance(reg_b, int):
+                # going to add the int value to the first register as a binary
+                # representation of the integer value that is passed
+                reg_a[self.PC] = int(reg_b, base=2)
+                # increment the PC by one to denote that there has been a change
+                self.PC += 1
+            else:
+                raise ValueError(
+                    "the value of reg_b must be an integer for LDI\
+                    to work properly")
+
         # LD
         elif op == 0b10000011:
             # not sure what LD does going to implement later
             pass
+
         # ST
         elif op == 0b10000100:
             # again not sure what this does atm
@@ -93,8 +180,8 @@ class CPU:
         # PRN
         elif op == 0b01000111:
             print(reg_a)
-            # PRA
-        elif op == 0B01001000:
+        # PRA
+        elif op == 0b01001000:
             # not sure what PRA does
             pass
         else:
@@ -115,55 +202,57 @@ class CPU:
         # using some fancy slicing here
         return self.RAM[address:(address + upper_limit)]
 
+#############################################################
+#           CPU DEBUGGING FUNCTIONS                         #
+#############################################################
+
     def trace(self):
         """
         Handy function to print out the CPU state. You might want to call this
         from run() if you need help debugging.
         """
 
-        print(
-            f"TRACE: %02X | %02X %02X %02X |" % (
-                self.pc,
-                #self.fl,
-                #self.ie,
-                self.ram_read(self.pc),
-                self.ram_read(self.pc + 1),
-                self.ram_read(self.pc + 2)),
-            end='')
+        print(f"TRACE: %02X | %02X %02X %02X |" %
+              (self.PC, self.IR, self.FL, self.IE, xself.ram_read(self.PC),
+               self.ram_read(self.PC + 1), self.ram_read(self.PC + 2)),
+              end='')
 
         for i in range(8):
             print(" %02X" % self.reg[i], end='')
 
         print()
 
+    def dump_ram(self) -> dict:
+        return self.RAM
+
+    def dump_registers(self):
+        for i in self.registers:
+            print(i)
+        return self.registers
+
     def run(self):
         """Starts the main execution of the program"""
-
         running = True
         while running:
-
-
-        return None
-
-class LS8IO():
-    def __init__(self, program_file: str, emulator: CPU):
-        if program_file[-3] != 'ls8':
-            print("please use an ls8 file type for the ls8 emulator")
-        self.file = open(program_file, 'rb')
+            
 
         return None
+
+
+#############################################################
+#              SUPPORT FUNCTIONS/CLASSES                    #
+#############################################################
 
 if __name__ == '__main__':
-    # For now, we've just hardcoded a program:
-    program = [
-        # From print8.ls8
-        0b10000010,  # LDI R0,8
-        0b00000000,
-        0b00001000,
-        0b01000111,  # PRN R0
-        0b00000000,
-        0b00000001,  # HLT
-    ]
-    cpu = CPU()
-    cpu.load(program)
+    # init the cpu in debug mode with 256 bytes of ram and 1 compute core
+    cpu = CPU(DBG=True, ram_size=256, cores=1)
+
+    # load a file from the local directory to run
+    p = cpu.load_file("./examples/print8.ls8")
+
+    # execute the program by running the main loop in the run()
+    # function for the cpu
     cpu.run()
+
+    # hopefully the output of the print8.ls8 is going to be:
+    # 8
