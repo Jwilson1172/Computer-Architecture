@@ -34,7 +34,6 @@ class CPU:
     # something larger to hold larger programs/stacks
     def __init__(self, DBG=False, ram_size=256, cores=1):
         """Construct a new CPU."""
-        # program counter
         # the location of the currently executing program
         if cores > 1:
             # this is added because at some point i would like to implement
@@ -44,8 +43,12 @@ class CPU:
 
         # set to NOP by default
         self.pc = 0b00000000
+
         # the IR register is just going to hold a copy of the PC reg
         self.ir = self.pc
+
+        # init the execution interupt registry
+        self.ie = 0
 
         # stack pointer is going to be init to 0 but will change later in
         # self.run()
@@ -112,8 +115,9 @@ class CPU:
         type(None)
         (ideally this isn't going to return anything just modify the state of the internal vars)
         """
-        self.IR = self.PC
-        self.r[0] = self.r[1]
+        # TODO
+        # I plan on making this a dispach table using hashtable mechanics
+        # to get O(1) lookup on executing the operators
         # CMP
         if op == 0b10100111:
             # adding the compare operation
@@ -188,19 +192,16 @@ class CPU:
             self.trace()
             raise Exception("Unsupported ALU operation")
 
-    def ram_read(self, address, upper_limit=1):
-        """Returns the Data that is stored in the ram at `address` and reads
-        `upper_limit` number of ram slots
+    def ram_read(self, address):
+        """Returns the Data that is stored in the ram at `address`
 
         Args:
             address ([type]): [description]
-            upper_limit (int, optional): [description]. Defaults to 1.
 
         Returns:
             entries from the ram hashtable
         """
-        # using some fancy slicing here
-        return self.RAM[address:(address + upper_limit)]
+        return self.RAM[address]
 
 #############################################################
 #           CPU DEBUGGING FUNCTIONS                         #
@@ -213,8 +214,8 @@ class CPU:
         """
 
         print(f"TRACE: %02X | %02X %02X %02X |" %
-              (self.PC, self.IR, self.FL, self.IE, xself.ram_read(self.PC),
-               self.ram_read(self.PC + 1), self.ram_read(self.PC + 2)),
+              (self.pc, self.ir, self.fl, self.ie, self.ram_read(self.pc),
+               self.ram_read(self.pc + 1), self.ram_read(self.pc + 2)),
               end='')
 
         for i in range(8):
@@ -226,16 +227,43 @@ class CPU:
         return self.RAM
 
     def dump_registers(self):
-        for i in self.registers:
+        for i in self.reg:
             print(i)
-        return self.registers
+        return self.reg
 
     def run(self):
         """Starts the main execution of the program"""
         running = True
+        # a simple count to figure out how many times my cpu has cycled
+        clock = 0
         while running:
-            
+            clock += 1
+            # read next op from ram
+            op = self.ram_read(self.pc)
+            if self.DBG:
+                self.trace()
 
+            # set the IR to reflect the PC
+            self.ir = op
+            if self.DBG:
+                self.trace()
+
+            # unpack the arguments from the next two slots in ram
+            a0, a1 = self.ram_read(self.pc + 1), self.ram_read(self.pc + 2)
+            if self.DBG:
+                self.trace()
+
+            # send the op and arguments to the alu
+            self.alu(op, a0, a1)
+            if self.DBG:
+                self.trace()
+
+            # going to want to increment past the arguments that were used
+            # in the last operator
+            self.pc += 3
+            if self.DBG:
+                self.trace()
+                print(f"clock_num: {clock}")
         return None
 
 
