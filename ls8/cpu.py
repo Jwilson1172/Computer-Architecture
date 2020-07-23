@@ -58,6 +58,8 @@ class CPU:
         # operations
         self.reg = [] * 8
 
+        # flag register
+        self.fl = 0
         # initalize the hash table that will be acting as ram
         self.RAM = {k: None for k in range(ram_size)}
 
