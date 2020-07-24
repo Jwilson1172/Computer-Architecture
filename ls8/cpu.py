@@ -47,10 +47,13 @@ class CPU:
         self.ie = 0
 
         # stack pointer set to the 7th registry
-        self.sp = 252
+        self.sp = 7
 
         # general pourpose registry for holding the arguments for the operations
         self.reg = [0] * 8
+
+        # setting the stack pointer to the defualt location
+        self.reg[self.sp] = 244
 
         # flag register
         self.fl = 0
@@ -94,6 +97,9 @@ class CPU:
     SUB = 0b10100001
     SHL = 0b10101100
     SHR = 0b10101101
+    MUL = 0b10100010
+    MOD = 0b10100100
+    OR = 0b10101010
 
     # stack
     PUSH = 0b01000101
@@ -102,8 +108,6 @@ class CPU:
     # coroutines
     RET = 0b00010001
     CALL = 0b01010000
-    IRET = 0b00010011
-    INT = 0b01010010
 
     ###########################################################################
     #                        Instructions Functions                           #
@@ -148,6 +152,7 @@ class CPU:
         reg_a = self.ram_read(self.pc + 1)
         self.ram_write(self.reg[self.sp], self.reg[reg_a])
         self.reg[self.sp] -= 1
+
         self.pc += 2
 
     # subroutines
@@ -156,10 +161,11 @@ class CPU:
         reg = self.ram_read(self.pc + 1)
         # get the address that we are going to be changing to
         address = self.reg[reg]
-        # push the address of the next instruction to the stack
-        self.ram_write(self.reg[self.sp], self.pc + 2)
         # decrement the stack pointer
         self.reg[self.sp] -= 1
+        # push the address of the next instruction to the stack
+        self.ram_write(self.reg[self.sp], self.pc + 2)
+
         self.pc = address
         return
 
@@ -171,9 +177,6 @@ class CPU:
         # set the current pc == to the return address
         self.pc = address
         return
-
-    def iint(self):
-        pass
 
     # other operators
     def prn(self):
@@ -204,7 +207,7 @@ class CPU:
 
     def ldi(self):
         reg_a = self.ram_read(self.pc + 1)
-        integer = self.ram_read(self.pc + 2)
+        interger = self.ram_read(self.pc + 2)
         self.reg[reg_a] = interger
         self.pc += 3
         return
@@ -235,7 +238,7 @@ class CPU:
     def mul(self):
         reg_a = self.ram_read(self.pc + 1)
         reg_b = self.ram_read(self.pc + 2)
-        self.reg[reg_a] *= self.reg[reg_b]
+        self.reg[reg_a] = self.reg[reg_a] * self.reg[reg_b]
         self.pc += 3
         return
 
@@ -394,45 +397,28 @@ class CPU:
             self.NOP: self.nop,  # end other instructions
             self.PUSH: self.push,
             self.POP: self.pop,  # end stack instructions
+            self.CALL: self.call,
+            self.RET: self.ret,  # end subroutine instructions
         }
         while self.running:
             clock += 1
             if self.DBG:
                 print("CLK: {}".format(clock))
+                breakpoint()
 
             instr = self.ram_read(self.pc)
+            self.ir = instr
             self.dispatch[instr]()
 
-            # add some stack checking stuff
-            # i know that this isn't a original feature of the ls8 but i
-            # like to implement it as an improvement
-            if (self.reg[self.sp] - self.pc) < 20:
-                print(
-                    "CRIT. WARN: STACK IS CLOSE TO OVERFLOWING (<20 slots left)"
-                )
-                while True:
-                    trap = input(
-                        "would you like to continue with the execution or drop to a dbg shell?\n[c:cont., sh: debugger, q: quit ]"
-                    )
-                    if trap == 'sh':
-                        breakpoint()
-                    elif trap == 'q':
-                        exit()
-                    elif trap == 'c':
-                        break
-                    else:
-                        print(
-                            "command not requognised please use 'c' for continue, sh for debugger or q for quit(halt)"
-                        )
         return None
 
 
 if __name__ == '__main__':
     # init the cpu in debug mode with 256 bytes of ram and 1 compute core
-    cpu = CPU()
+    cpu = CPU(DBG=True)
 
     # load a file from the local directory to run
-    p = cpu.load("./examples/print8.ls8")
+    p = cpu.load("./ls8/examples/printstr.ls8")
 
     # execute the program by running the main loop in the run()
     # function for the cpu
