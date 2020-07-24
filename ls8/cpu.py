@@ -61,6 +61,11 @@ class CPU:
         # initalize the hash table that will be acting as ram
         self.RAM = {k: None for k in range(ram_size)}
 
+        # gloabal equals flag
+        self.equals = 0b001
+        self.greater = 0b010
+        self.lessthan = 0b100
+
         # global debugging toggle
         self.DBG = DBG
 
@@ -116,21 +121,35 @@ class CPU:
     # gates
 
     def aand(self):
+        """Function takes the value of one register and &'s it then sores the
+        result in reg_a
+        """
+        # get the first register pointer
         reg_a = self.read_ram(self.pc + 1)
+        # get the second register pointer
         reg_b = self.read_ram(self.pc + 2)
-        self.reg[reg_a] &= self.reg[reg_b]
+        # store the value of reg_a & reg_b
+        self.reg[reg_a] = self.reg[reg_a] & self.reg[reg_b]
+        # increment pc
         self.pc += 3
         return
 
     def oor(self):
-        rp = self.read_ram(self.pc + 1)
-        self.reg[rp] = ~(self.reg[rp])
-        self.pc += 2
+        # get the registry pointers
+        reg_a = self.read_ram(self.pc + 1)
+        reg_b = self.ram_read(self.pc + 2)
+        # store the result of reg_a | reg_b in reg_a
+        self.reg[reg_a] = self.reg[reg_a] | self.reg[reg_b]
+        # increment pc
+        self.pc += 3
         return
 
     def nnot(self):
+        # get the register pointer
         rp = self.read_ram(self.pc + 1)
-        self.reg[rp] = not (self.reg[rp])
+        # set the register equal to its not'ed self
+        self.reg[rp] = ~(self.reg[rp])
+        # increment pc
         self.pc += 2
         return
 
@@ -144,16 +163,19 @@ class CPU:
         self.reg[self.ram_read(self.pc + 1)] = value
         self.reg[self.sp] += 1
         self.pc += 2
+        return
 
     def push(self):
         """loads the args from the ram using pc + 1,2 respectivly
         then write the value from the register to the top of the stack then
         decrement the stack and advance the pc"""
+        # get the register from ram
         reg_a = self.ram_read(self.pc + 1)
-        self.ram_write(self.reg[self.sp], self.reg[reg_a])
         self.reg[self.sp] -= 1
+        self.ram_write(self.reg[self.sp], self.reg[reg_a])
 
         self.pc += 2
+        return
 
     # subroutines
     def call(self):
@@ -200,9 +222,10 @@ class CPU:
 
     def jmp(self) -> None:
         # load the address to jump to
-        address = self.ram_read(self.pc + 1)
+        reg = self.ram_read(self.pc + 1)
         # set the new location for pc
-        self.pc = address
+        self.pc = self.reg[reg]
+
         return
 
     def ldi(self):
@@ -262,22 +285,25 @@ class CPU:
 
     def jeq(self):
         # if the CMP flag is set to E
-        if self.fl == 0b00000001:
+        if self.fl & self.equals:
             # make a jump to the address in reg
             self.jmp()
+        return
 
     def jne(self):
         # if the E flag is clear meaning that the fl == 0 then jump to the
         # address held in the reg
-        if self.fl == 0:
+        if not self.fl & self.equals:
             self.jmp()
+
+        return
 
     def shl(self):
         # get both of the registers
         reg_a = self.ram_read(self.pc + 1)
         reg_b = self.ram_read(self.pc + 2)
         # shift the reg_a by the amount stored in reg_b
-        self.reg[reg_a] = self.reg[reg_a] << self.reg[reg_b]
+        self.reg[reg_a] <<= self.reg[reg_b]
         # advance pc
         self.pc += 3
         return
@@ -288,7 +314,7 @@ class CPU:
         reg_b = self.read_ram(self.pc + 2)
         # shift the value in the first registry by the value in the second
         # registry and store the result in the reg_a
-        self.reg[a] = self.reg[reg_a] >> self.reg[reg_b]
+        self.reg[reg_a] >>= self.reg[reg_b]
         # advance pc
         self.pc += 3
         return
@@ -299,22 +325,25 @@ class CPU:
         """
         reg_a, reg_b = self.ram_read(self.pc + 1), self.ram_read(self.pc + 2)
         # adding the compare operation
-        if self.reg[reg_a] == self.reg[reg_b]:
-            self.fl = 0b00000001  # E
+        self.fl = self.fl & 0x11111000
+        if self.reg[reg_a] < self.reg[reg_b]:
+            self.fl = self.fl | self.lessthan
         elif self.reg[reg_a] > self.reg[reg_b]:
-            self.fl = 0b00000010  # G
-        elif self.reg[reg_a] < self.reg[reg_b]:
-            self.fl = 0b00000100  # L
+            self.fl = self.fl | self.greater
+        else:
+            self.fl = self.fl | self.equals
         self.pc += 3
         return None
 
     def inc(self):
+        # this function increments a register
         rp = self.read_ram(self.pc + 1)
         self.reg[rp] += 1
         self.pc += 2
         return
 
     def dec(self):
+        # this function decrements a register
         rp = self.read_ram(self.pc + 1)
         self.reg[rp] -= 1
         self.pc += 2
@@ -330,23 +359,13 @@ class CPU:
         from run() if you need help debugging.
         """
 
-        print(f"TRACE: %02X | %02X %02X %02X |" %
-              (self.pc, self.ir, self.fl, self.ie, self.ram_read(self.pc),
-               self.ram_read(self.pc + 1), self.ram_read(self.pc + 2)),
-              end='')
+        print(self.pc, self.ir, self.fl, self.ie, self.ram_read(self.pc),
+              self.ram_read(self.pc + 1), self.ram_read(self.pc + 2))
 
         for i in range(8):
             print(" %02X" % self.reg[i], end='')
 
         print()
-
-    def dump_ram(self) -> dict:
-        return self.RAM
-
-    def dump_registers(self):
-        for i in self.reg:
-            print(i)
-        return self.reg
 
     def load(self, fn):
         """Loads a .ls8 file from disk and runs it
@@ -354,7 +373,7 @@ class CPU:
         Args:
             fn: the name of the file to load into memory
         """
-        address = 0b00
+        address = 0
         with open(fn, 'rt') as f:
             for line in f:
                 try:
@@ -387,6 +406,7 @@ class CPU:
             self.DEC: self.dec,
             self.JEQ: self.jeq,
             self.JNE: self.jne,
+            self.CMP: self.cmp,
             self.MOD: self.mod,  # end alu instructions
             self.AND: self.aand,
             self.OR: self.oor,
@@ -411,18 +431,3 @@ class CPU:
             self.dispatch[instr]()
 
         return None
-
-
-if __name__ == '__main__':
-    # init the cpu in debug mode with 256 bytes of ram and 1 compute core
-    cpu = CPU(DBG=True)
-
-    # load a file from the local directory to run
-    p = cpu.load("./ls8/examples/printstr.ls8")
-
-    # execute the program by running the main loop in the run()
-    # function for the cpu
-    cpu.run()
-
-    # hopefully the output of the print8.ls8 is going to be:
-    # 8
