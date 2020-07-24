@@ -47,7 +47,7 @@ class CPU:
         self.ie = 0
 
         # stack pointer set to the 7th registry
-        self.sp = 7
+        self.sp = 252
 
         # general pourpose registry for holding the arguments for the operations
         self.reg = [0] * 8
@@ -79,11 +79,16 @@ class CPU:
     PRN = 0b01000111
     PRA = 0b01001000
 
+    # sc ops
+    JEQ = 0b01010101
+    JNE = 0b01010110
+
     # alu operations
     ADD = 0b10100000
     MLP = 0b10100010
     DIV = 0b10100011
     DEC = 0b01100110
+    INC = 0b01100101
     CMP = 0b10100111
     AND = 0b10101000
     NOT = 0b01101001
@@ -99,105 +104,124 @@ class CPU:
     #                        Instructions Functions                           #
     ###########################################################################
 
-    def cmp(self, reg_a, reg_b) -> None:
+    def cmp(self) -> None:
         """This Function takes the regerister arguments and sets the flag register
         accordingly see tyhe spec for a breakdown on the flags
         """
+        reg_a, reg_b = self.ram_read(self.pc + 1), self.ram_read(self.pc + 2)
         # adding the compare operation
-        if reg_a == reg_b:
-            self.fl = 0b00000001
-        elif reg_a > reg_b:
-            self.fl = 0b00000010
-        elif reg_a < reg_b:
-            self.fl = 0b00000100
-        else:
-            self.trace()
-            raise Exception("fault with CMP operation")
+        if self.reg[reg_a] == self.reg[reg_b]:
+            self.fl = 0b00000001  # E
+        elif self.reg[reg_a] > self.reg[reg_b]:
+            self.fl = 0b00000010  # G
+        elif self.reg[reg_a] < self.reg[reg_b]:
+            self.fl = 0b00000100  # L
+        self.pc += 3
         return None
 
-    def jmp(self, address) -> None:
-        self.pc = address
-        return None
+    def inc(self):
+        rp = self.read_ram(self.pc + 1)
+        self.reg[rp] += 1
+        self.pc += 2
+        return
+
+    def dec(self):
+        rp = self.read_ram(self.pc + 1)
+        self.reg[rp] -= 1
+        self.pc += 2
+        return
+
+    def ldi(self):
+        reg_a = self.ram_read(self.pc + 1)
+        integer = self.ram_read(self.pc + 2)
+        self.reg[reg_a] = interger
+        self.pc += 3
+        return
+
+    def aand(self):
+        reg_a = self.read_ram(self.pc + 1)
+        reg_b = self.read_ram(self.pc + 2)
+        self.reg[reg_a] &= self.reg[reg_b]
+        self.pc += 3
+        return
+
+    def oor(self):
+        rp = self.read_ram(self.pc + 1)
+        self.reg[rp] = ~(self.reg[rp])
+        self.pc += 2
+        return
+
+    def pop(self):
+        """take the value from the top of the stack and load it into the
+        register that is specified by pc + 1
+        """
+        value = self.ram_read(self.reg[self.sp])
+        self.reg[self.ram_read(self.pc + 1)] = value
+        self.reg[self.sp] += 1
+        self.pc += 2
+
+    def push(self):
+        """loads the args from the ram using pc + 1,2 respectivly
+        then write the value from the register to the top of the stack then
+        decrement the stack and advance the pc"""
+        reg_a = self.ram_read(self.pc + 1)
+        self.ram_write(self.reg[self.sp], self.reg[reg_a])
+        self.reg[self.sp] -= 1
+        self.pc += 2
+
+    def shl(self):
+        # get both of the registers
+        reg_a = self.ram_read(self.pc + 1)
+        reg_b = self.ram_read(self.pc + 2)
+
+        # shift the reg_a by the amount stored in reg_b
+        self.reg[reg_a] = self.reg[reg_a] << self.reg[reg_b]
+
+    # other operators
+    def prn(self):
+        # load the register to print
+        reg_a = self.ram_read(self.pc + 1)
+        # print the register
+        print(self.reg[reg_a])
+        # advance the pc
+        self.pc += 2
+        return
 
     def nop(self):
+        # still going to want to advance the pc
+        self.pc += 1
         return
 
     def hlt(self):
         self.running = False
+        # no need to adnvance the pc because the progam is finished
         return
 
-    def ldi(self, reg_a, reg_b):
+    def jmp(self) -> None:
+        # load the address to jump to
+        address = self.ram_read(self.pc + 1)
+        # set the new location for pc
+        self.pc = address
         return
 
-    def aand(self, reg_a, reg_b):
-        self.reg[reg_a] = self.reg[reg_a] & self.reg[reg_b]
-        return
+    def jeq(self):
+        # if the CMP flag is set to E
+        if self.fl == 0b00000001:
+            # make a jump to the address in reg
+            self.jmp()
 
-    def prn(self, reg_a, reg_b):
-        print(self.reg[reg_a])
-        return
-
-    def load(self, p):
-        """Load a program into memory."""
-        # changing this number of the binary form of the int to I can have
-        # consitencey in the program execution
-        address = 0b00
-
-        for instruction in p:
-            self.ram[address] = instruction
-            address += 1
-
-    def load_file(self, fn):
-        """Loads a .ls8 file from disk and runs it
-
-        Args:
-            fn: the name of the file to load into memory
-        """
-        address = 0b00
-        with open(fn, 'rt') as f:
-            for line in f:
-                try:
-                    line = line.split("#", 1)[0]
-                    line = int(line, base=2)
-                    self.RAM[address] = line
-                    address += 1
-                except ValueError:
-                    pass
-
-    ###########################################################################
-    #                       ALU OPPERATIONS                                   #
-    ###########################################################################
-
-    def alu(self, op: int, reg_a, reg_b) -> type(None):
-        """ALU for the cpu that handles a veritity of operations preformed
-        by the cpu, this method handles the `brains` of the cpu essentially
-        Arguments:
-        -----------
-        `reg_a` : the first register to take from
-        `reg_b` : the second register to act on
-        `op` : a binary opperator that tells the alu what to execute
-        """
-        self.dispatch_table = {
-            self.JMP: self.jmp,
-            self.NOP: self.nop,
-            self.HLT: self.hlt,
-            self.LDI: self.ldi,
-            self.AND: self.aand,
-            self.PRN: self.prn,
-        }
-        self.dispatch_table[op](reg_a, reg_b)
-        return None
+    def jne(self):
+        # if the E flag is clear meaning that the fl == 0 then jump to the
+        # address held in the reg
+        if self.fl == 0:
+            self.jmp()
 
     def ram_read(self, address):
-        """Returns the Data that is stored in the ram at `address`
-
-        Args:
-            address ([type]): [description]
-
-        Returns:
-            entries from the ram hashtable
-        """
         return self.RAM[address]
+
+    def ram_write(self, address, value):
+        self.RAM[address] = value
+        return
 
     ###########################################################################
     #                 CPU DEBUGGING FUNCTIONS                                 #
@@ -227,15 +251,77 @@ class CPU:
             print(i)
         return self.reg
 
+    def load(self, fn):
+        """Loads a .ls8 file from disk and runs it
+
+        Args:
+            fn: the name of the file to load into memory
+        """
+        address = 0b00
+        with open(fn, 'rt') as f:
+            for line in f:
+                try:
+                    line = line.split("#", 1)[0]
+                    line = int(line, base=2)
+                    self.RAM[address] = line
+                    address += 1
+                except ValueError:
+                    pass
+
     ###########################################################################
     #                              MAIN                                       #
     ###########################################################################
+
+    dispatch = {
+        self.SHL: self.shl,
+        self.SHR: self.shr,
+        self.ADD: self.add,
+        self.SUB: self.sub,
+        self.MUL: self.mul,
+        self.DIV: self.div,
+        self.INC: self.inc,
+        self.DEC: self.dec,
+        self.MOD: self.mod,
+        self.AND: self.aand,
+        self.OR: self.oor,
+        self.JEQ: self.jeq,
+        self.JNE: self.jne,
+    }
+
     def run(self):
         """Starts the main execution of the program"""
         self.running = True
         # a simple count to figure out how many times my cpu has cycled
         clock = 0
-        while running:
+        while self.running:
+            clock += 1
+            if self.DBG:
+                print("CLK: {}".format(clock))
+
+            instr = self.ram_read(self.pc)
+            self.dispatch[instr]()
+
+            # add some stack checking stuff
+            # i know that this isn't a original feature of the ls8 but i
+            # like to implement it as an improvement
+            if (self.reg[self.sp] - self.pc) < 20:
+                print(
+                    "CRIT. WARN: STACK IS CLOSE TO OVERFLOWING (<20 slots left)"
+                )
+                while True:
+                    trap = input(
+                        "would you like to continue with the execution or drop to a dbg shell?\n[c:cont., sh: debugger, q: quit ]"
+                    )
+                    if trap == 'sh':
+                        breakpoint()
+                    elif trap == 'q':
+                        exit()
+                    elif trap == 'c':
+                        break
+                    else:
+                        print(
+                            "command not requognised please use 'c' for continue, sh for debugger or q for quit(halt)"
+                        )
         return None
 
 
@@ -244,7 +330,7 @@ if __name__ == '__main__':
     cpu = CPU()
 
     # load a file from the local directory to run
-    p = cpu.load_file("./examples/print8.ls8")
+    p = cpu.load("./examples/print8.ls8")
 
     # execute the program by running the main loop in the run()
     # function for the cpu
