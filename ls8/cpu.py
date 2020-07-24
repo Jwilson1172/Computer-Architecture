@@ -1,29 +1,7 @@
 """CPU functionality."""
 
 import sys
-
-
-class Stack():
-    def __init__(self, num: int) -> None:
-        """set the size of the with the num argument"""
-        if num <= 256:
-            self.stack = [None] * num
-        else:
-            raise ValueError("STACK.size > 256")
-        return None
-
-    def push(self, value):
-        self.stack.append(value)
-        return
-
-    def pop(self):
-        if self.size() > 0:
-            return self.stack.pop()
-        else:
-            return None
-
-    def size(self):
-        return len(self.stack)
+from glob import glob
 
 
 class CPU:
@@ -321,7 +299,7 @@ class CPU:
 
     def cmp(self) -> None:
         """This Function takes the regerister arguments and sets the flag register
-        accordingly see tyhe spec for a breakdown on the flags
+        accordingly see the spec for a breakdown on the flags
         """
         reg_a, reg_b = self.ram_read(self.pc + 1), self.ram_read(self.pc + 2)
         # adding the compare operation
@@ -431,3 +409,16 @@ class CPU:
             self.dispatch[instr]()
 
         return None
+
+
+if __name__ == '__main__':
+    cpu = CPU()
+    tests = glob("./ls8/examples/*.ls8")
+    for test in tests:
+        try:
+            print("test: {}".format(test))
+            # test should be the name of the file
+            cpu.load(test)
+            cpu.run() | print("failed")
+        except Exception as e:
+            print(e)
