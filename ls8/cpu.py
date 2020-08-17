@@ -151,8 +151,8 @@ class CPU:
         return
 
     def hlt(self):
-        exit(1)
-        # no need to adnvance theself.pcbecause the progam is finished
+        self.running = False
+        self.pc += 1
         return
 
     def jmp(self) -> None:
@@ -371,11 +371,14 @@ if __name__ == '__main__':
         # init the cpu
         cpu = CPU(DBG=False)
         if len(argv) > 1:
-            print("Launching in multi-test mode:")
+            print("Launching in multi-test mode:\n")
             for test in argv[1:]:
+                print(test)
+                cpu.reset()
                 cpu.load(test)
                 cpu.run()
-                cpu.reset()
+                print("\n")
+
         else:
             cpu.load('examples/call.ls8')
             cpu.run()
