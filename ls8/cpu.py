@@ -112,7 +112,7 @@ class CPU:
         return
 
     def push(self):
-        """loads the args from the ram usingself.pc+ 1,2 respectivly
+        """loads the args from the ram usingself.pc+ 1,2 respectively
         then write the value from the register to the top of the stack then
         decrement the stack and advance the pc"""
         # get the register from ram
