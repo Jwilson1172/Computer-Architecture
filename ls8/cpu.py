@@ -2,6 +2,8 @@
 
 import sys
 from sys import argv
+from time import time
+#from util import CpuMaths
 
 
 class CPU:
@@ -21,28 +23,39 @@ class CPU:
         # the IR register is just going to hold a copy of the PC reg
         self.ir = 0
 
-        # init the execution interupt registry
-        # self.ie = 0
+        # init the interuption
+        self.interruption_signal = 0b00000000
+        self.interruption_mask = 0b00000000
 
         # stack pointer set to the 7th registry
         self.sp = 7
+        # set the interuption mask pointer to the 5th registry
+        self.im = 5
+
+        # set the interruption status/signal as registry 6
+        self.IS = 6
 
         # general pourpose registry for holding the arguments for the operations
         self.reg = [0] * 8
 
         # setting the stack pointer to the defualt location
-        self.reg[self.sp] = 244
+        self.reg[self.sp] = 0xf3
+
+        # set the interruption mask and signal as cleared
+        self.reg[self.IS] = 0b00000000
+        self.reg[self.im] = 0b00000000
+
+        # from my understanding this part of the ram stores the address to
+        # the interuption handler
+        self.I_vectors = [0] * 8
+        # int toggle
+        self._w = False
 
         # flag register
         self.fl = 0
 
         # initalize the hash table that will be acting as ram
         self.RAM = {k: None for k in range(ram_size)}
-
-        # gloabal equals flag
-        #self.equals = 0b001
-        #self.greater = 0b010
-        #self.lessthan = 0b100
 
         # global debugging toggle
         self.DBG = DBG
@@ -59,12 +72,14 @@ class CPU:
     ###########################################################################
     #                        Instructions                                     #
     ###########################################################################
+
     JMP = 0b01010100
     LDI = 0b10000010
     NOP = 0b00000000
     HLT = 0b00000001
     PRN = 0b01000111
     ST = 0b10000100
+    INT = 0b01010010
 
     # sc ops
     JEQ = 0b01010101
@@ -85,7 +100,7 @@ class CPU:
     MUL = 0b10100010
     MOD = 0b10100100
     OR = 0b10101010
-
+    LD = 0b10000011
     # stack
     PUSH = 0b01000101
     POP = 0b01000110
@@ -94,8 +109,40 @@ class CPU:
     RET = 0b00010001
     CALL = 0b01010000
 
+    # custom functions using arrays
+    START_ARR = 0b111111101
+    END_ARR = 0b1111111110
+
     ###########################################################################
-    #                        Instructions Functions                           #
+    #                        Dispatch Table                                   #
+    ###########################################################################
+    dispatch = {
+        ADD: add,
+        SUB: sub,
+        MUL: mul,
+        DIV: div,
+        JEQ: jeq,
+        JNE: jne,
+        CMP: cmp,
+        MOD: mod,  # end alu instructions
+        LDI: ldi,
+        PRN: prn,
+        HLT: hlt,
+        NOP: nop,  # end other instructions
+        PUSH: push,
+        POP: pop,  # end stack instructions
+        CALL: call,
+        RET: ret,  # end subroutine instructions
+        DEC: dec,  # adding increment and decrement instructions
+        INC: inc,
+        JMP: jmp,
+        ST: st,
+        LD: ld,
+        INT: inter,
+    }
+
+    ###########################################################################
+    #                        Instruction Functions                            #
     ###########################################################################
 
     # stacks
@@ -104,10 +151,21 @@ class CPU:
         """take the value from the top of the stack and load it into the
         register that is specified byself.pc+ 1
         """
+        # not quite sure how to handle the underflow
+        # of the stack but for now we can hlt
+        if self.reg[self.sp] >= 0xf3:
+            print("STACK UNDERFLOW DETECTED")
+            self.hlt()
+            return
+        # get the value from the stack
         stack_value = self.ram_read(self.reg[self.sp])
+        # get the target register from ram
         register_number = self.ram_read(self.pc + 1)
+        # set the value of the register = to the value pulled off the stack
         self.reg[register_number] = stack_value
+        # increment the stack pointer
         self.reg[self.sp] += 1
+        # increment the program counter
         self.pc += 2
         return
 
@@ -115,18 +173,29 @@ class CPU:
         """loads the args from the ram usingself.pc+ 1,2 respectively
         then write the value from the register to the top of the stack then
         decrement the stack and advance the pc"""
-        # get the register from ram
+        if self.reg[self.sp] <= self.pc:
+            print("OverFlow Detected: HALTING")
+            self.hlt()
+            return
+        # decrement the stack pointer
         self.reg[self.sp] -= 1
+        # get the current stack pointer
         stack_address = self.reg[self.sp]
+        # get the register number from ram
         register_number = self.ram_read(self.pc + 1)
+        # pull the data  value from the register
         value = self.reg[register_number]
+        # write value to the stack address
         self.ram_write(stack_address, value)
+        # inc. program counter
         self.pc += 2
         return
 
     # subroutines
     def call(self):
+        # decrement the stack pointer
         self.reg[self.sp] -= 1
+
         stack_address = self.reg[self.sp]
         returned_address = self.pc + 2
         self.ram_write(stack_address, returned_address)
@@ -178,6 +247,19 @@ class CPU:
         return
 
     # alu instructions
+    def alu(self, operation, reg_a, reg_b):
+        """ALU operations."""
+
+        if operation == self.ADD:
+            self.reg[reg_a] += self.reg[reg_b]
+        elif operation == self.SUB:
+            self.reg[reg_a] -= self.reg[reg_b]
+        elif operation == self.MUL:
+            self.reg[reg_a] *= self.reg[reg_b]
+        elif operation == self.DIV:
+            self.reg[reg_a] /= self.reg[reg_b]
+        else:
+            raise Exception("ALU operation not supported")
 
     def add(self):
         reg_a = self.ram_read(self.pc + 1)
@@ -201,9 +283,6 @@ class CPU:
         return
 
     def div(self):
-        """Divides the value of reg_a by the value of the reg_b then store the
-        result in reg_a"""
-
         reg_a = self.ram_read(self.pc + 1)
         reg_b = self.ram_read(self.pc + 2)
         self.alu(self.ir, reg_a, reg_b)
@@ -254,6 +333,19 @@ class CPU:
         self.pc += 3
         return
 
+    def inc(self):
+        # increment the register that is passed in ram
+        self.reg[self.ram_read(self.pc + 1)] += 1
+        # increment the pc
+        self.pc += 2
+        return
+
+    def dec(self):
+        # decrement the register that is passed in ram
+        self.reg[self.ram_read(self.pc + 1)] -= 1
+        self.pc += 2
+        return
+
     def cmp(self) -> None:
         """This Function takes the regerister arguments and sets the flag register
         accordingly see the spec for a breakdown on the flags
@@ -271,27 +363,51 @@ class CPU:
         self.pc += 3
         return
 
-    ###########################################################################
-    #                 CPU DEBUGGING FUNCTIONS                                 #
-    ###########################################################################
+    def ld(self):
+        # Loads registerA with the value at the memory address
+        # stored in registerB.
+        self.reg[self.ram_read(self.pc + 1)] = self.ram_read(
+            self.reg[self.ram_read(self.pc + 2)])
+        self.pc += 3
 
+        return
+
+    def inter(self):
+        print("NOT FULLY IMPLEMENTED!!")
+        # issue the interupt number stored in the register
+        # toggle the interuption bool that will trigger the main loop to hook
+        self._w = True
+        # get the interupt number from the register
+        raise_number = self.reg[self.ram_read(self.pc + 1)]
+        print(
+            f"DBG: the value in register {self.ram_read(self.pc + 1)} is {raise_number}"
+        )
+        breakpoint()
+        return
+
+    ###########################################################################
+    #                          UTIL FUNCTIONS                                 #
+    ###########################################################################
     def trace(self):
         print(f"""
-        pc: {self.pc}
+        pc: {self.pc}\
+
         main loop iter: {self.clock}
         ir: {self.ir}
-       self.pc+ 1: {self.RAM[self.pc + 1]}
-       self.pc+ 2: {self.RAM[self.pc + 2]}
+        self.pc+ 1: {self.RAM[self.pc + 1]}
+        self.pc+ 2: {self.RAM[self.pc + 2]}
         registry values:\n{self.reg}\n
         stack(top):\n{self.ram_read(self.reg[self.sp])}
 
         """)
+        return
 
     def load(self, fn):
         """Loads a .ls8 file from disk and runs it
 
         Args:
             fn: the name of the file to load into memory
+
         """
         address = 0
         with open(fn, 'rt') as f:
@@ -304,69 +420,142 @@ class CPU:
                 except ValueError:
                     pass
 
-    ###########################################################################
-    #                              MAIN                                       #
-    ###########################################################################
-    def alu(self, operation, reg_a, reg_b):
-        """ALU operations."""
-
-        if operation == self.ADD:
-            self.reg[reg_a] += self.reg[reg_b]
-        elif operation == self.SUB:
-            self.reg[reg_a] -= self.reg[reg_b]
-        elif operation == self.MUL:
-            self.reg[reg_a] *= self.reg[reg_b]
-        elif operation == self.DIV:
-            self.reg[reg_a] /= self.reg[reg_b]
-        else:
-            raise Exception("ALU operation not supported")
-
     def reset(self):
         self.__init__()
         return
 
+    ###########################################################################
+    #                              MAIN                                       #
+    ###########################################################################
     def run(self):
         """Starts the main execution of the program"""
         self.running = True
-
-        # a simple count to figure out how many times my cpu has cycled
         self.clock = 0
 
-        #implementing a dispatch table instead of an if/elif/else tree
-        # thin increases the runtime significantly
-
-        self.dispatch = {
-            self.ADD: self.add,
-            self.SUB: self.sub,
-            self.MUL: self.mul,
-            self.DIV: self.div,
-            self.JEQ: self.jeq,
-            self.JNE: self.jne,
-            self.CMP: self.cmp,
-            self.MOD: self.mod,  # end alu instructions
-            self.LDI: self.ldi,
-            self.PRN: self.prn,
-            self.HLT: self.hlt,
-            self.NOP: self.nop,  # end other instructions
-            self.PUSH: self.push,
-            self.POP: self.pop,  # end stack instructions
-            self.CALL: self.call,
-            self.RET: self.ret,  # end subroutine instructions
-        }
         while self.running:
 
-            self.clock += 1
-            if self.DBG:
-                print("CLK: {}".format(self.clock))
-                breakpoint()
+            try:
+                # absolute clock counter
+                self.clock += 1
 
-            self.ir = self.ram_read(self.pc)
-            self.dispatch[self.ir]()
+                # DBG HOOK
+                if self.DBG:
+                    # so that if i have an infinite loop there is a counter
+                    print("CLK: {}".format(self.clock))
+                    breakpoint()
+
+                # INTERUPTION HOOK
+                if self._w:
+                    # @TODO add int hook here
+                    pass
+
+                # read instruction and assign the ir register
+                self.ir = self.ram_read(self.pc)
+                # execute instruction
+                self.dispatch[self.ir]()
+
+            # adding unknown instr error hook
+            except KeyError as ke:
+                print(f"error instruction {self.ir} not in dispatch table")
+                self.running = False
+
+            # adding keyboard int
+            except KeyboardInterrupt as kbi:
+                self.running = False
+                # @TODO figure out what goes here
+
+                print("KeyBoardInt:")
 
         return None
 
 
-if __name__ == '__main__':
+    #Prior to instruction fetch, the following steps occur:
+    #1. The IM register is bitwise AND-ed with the IS register and the
+    #   results stored as `maskedInterrupts`.
+    #2. Each bit of `maskedInterrupts` is checked, starting from 0 and going
+    #   up to the 7th bit, one for each interrupt.
+    #3. If a bit is found to be set, follow the next sequence of steps. Stop
+    #   further checking of `maskedInterrupts`.
+    #If a bit is set:
+    #1. Disable further interrupts.
+    #2. Clear the bit in the IS register.
+    #3. The `PC` register is pushed on the stack.
+    #4. The `FL` register is pushed on the stack.
+    #5. Registers R0-R6 are pushed on the stack in that order.
+    #6. The address (_vector_ in interrupt terminology) of the appropriate
+    #   handler is looked up from the interrupt vector table.
+    #7. Set the PC is set to the handler address.
+    #While an interrupt is being serviced (between the handler being called
+    #and the `IRET`), further interrupts are disabled.
+    #
+    #See `IRET`, below, for returning from an interrupt.
+    #
+    #### Interrupt numbers
+    #
+    #* 0: Timer interrupt. This interrupt triggers once per second.
+    #* 1: Keyboard interrupt. This interrupt triggers when a key is pressed.
+    #  The value of the key pressed is stored in address `0xF4`.
+    #
+    #```
+    #      top of RAM
+    #+-----------------------+
+    #| FF  I7 vector         |    Interrupt vector table
+    #| FE  I6 vector         |
+    #| FD  I5 vector         |
+    #| FC  I4 vector         |
+    #| FB  I3 vector         |
+    #| FA  I2 vector         |
+    #| F9  I1 vector         |
+    #| F8  I0 vector         |
+    #| F7  Reserved          |
+    #| F6  Reserved          |
+    #| F5  Reserved          |
+    #| F4  Key pressed       |    Holds the most recent key pressed on the keyboard
+    #| F3  Start of Stack    |
+    #| F2  [more stack]      |    Stack grows down
+    #| ...                   |
+    #| 01  [more program]    |
+    #| 00  Program entry     |    Program loaded upward in memory starting at 0
+    #+-----------------------+
+    #    bottom of RAM
+    #```
+    ### INT
+    #
+    #`INT register`
+    #
+    #Issue the interrupt number stored in the given register.
+    #
+    #This will set the _n_th bit in the `IS` register to the value in the given
+    #register.
+    #
+    #Machine code:
+    #```
+    #01010010 00000rrr
+    #52 0r
+    #```
+    #
+    #### IRET
+    #
+    #`IRET`
+    #
+    #Return from an interrupt handler.
+    #
+    #The following steps are executed:
+    #
+    #1. Registers R6-R0 are popped off the stack in that order.
+    #2. The `FL` register is popped off the stack.
+    #3. The return address is popped off the stack and stored in `PC`.
+    #4. Interrupts are re-enabled
+    #
+    #Machine code:
+    #```
+    #00010011
+    #13
+    #```
+    return
+
+
+def main():
     try:
         # init the cpu
         cpu = CPU(DBG=False)
@@ -374,13 +563,23 @@ if __name__ == '__main__':
             print("Launching in multi-test mode:\n")
             for test in argv[1:]:
                 print(test)
+                now = time()
                 cpu.reset()
                 cpu.load(test)
                 cpu.run()
+                later = time()
+                print(f"Exec Time: {later - now}/sec")
                 print("\n")
-
         else:
-            cpu.load('examples/call.ls8')
+            now = time()
+            cpu.load('examples/stack.ls8')
             cpu.run()
+            later = time()
+            print(f"Execution time: {later - now}/sec")
     except Exception as e:
         pass
+    return
+
+
+if __name__ == '__main__':
+    testing()
