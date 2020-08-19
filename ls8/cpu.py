@@ -77,82 +77,87 @@ class CPU:
     LDI = 0b10000010
     NOP = 0b00000000
     HLT = 0b00000001
-    PRN = 0b01000111
-    ST = 0b10000100
     INT = 0b01010010
 
-    # sc ops
+    # printing instructions
+    PRN = 0b01000111
+    PRA = 0b01001000
+    # supported cmp jumps
     JEQ = 0b01010101
     JNE = 0b01010110
-
-    # alu operations
-    ADD = 0b10100000
-    MLP = 0b10100010
-    DIV = 0b10100011
+    # other cmp jumps
+    JGT = 0b01010111
+    JGE = 0b01011010
+    JLE = 0b01011001
+    JLT = 0b01011000
+    # counter
     DEC = 0b01100110
     INC = 0b01100101
+    # compare
     CMP = 0b10100111
-    AND = 0b10101000
-    NOT = 0b01101001
-    SUB = 0b10100001
+    # shifting
     SHL = 0b10101100
     SHR = 0b10101101
+    # arithmetic
     MUL = 0b10100010
     MOD = 0b10100100
+    DIV = 0b10100011
+    SUB = 0b10100001
+    ADD = 0b10100000
+    MLP = 0b10100010
+    # logic
     OR = 0b10101010
+    NOT = 0b01101001
+    XOR = 0b10101011
+    AND = 0b10101000
+    # ram
     LD = 0b10000011
+    ST = 0b10000100
     # stack
     PUSH = 0b01000101
     POP = 0b01000110
-
     # coroutines
     RET = 0b00010001
     CALL = 0b01010000
-
-    # custom functions using arrays
-    START_ARR = 0b111111101
-    END_ARR = 0b1111111110
-
-    ###########################################################################
-    #                        Dispatch Table                                   #
-    ###########################################################################
-    dispatch = {
-        ADD: add,
-        SUB: sub,
-        MUL: mul,
-        DIV: div,
-        JEQ: jeq,
-        JNE: jne,
-        CMP: cmp,
-        MOD: mod,  # end alu instructions
-        LDI: ldi,
-        PRN: prn,
-        HLT: hlt,
-        NOP: nop,  # end other instructions
-        PUSH: push,
-        POP: pop,  # end stack instructions
-        CALL: call,
-        RET: ret,  # end subroutine instructions
-        DEC: dec,  # adding increment and decrement instructions
-        INC: inc,
-        JMP: jmp,
-        ST: st,
-        LD: ld,
-        INT: inter,
-    }
 
     ###########################################################################
     #                        Instruction Functions                            #
     ###########################################################################
 
-    # stacks
+    # Logic
+    def instr_or(self):
+        """Perform a bitwise-OR between the values in registerA and registerB,
+        storing the result in registerA"""
+        self.reg[self.ram_read(self.pc +
+                               1)] |= self.reg[self.ram_read(self.pc + 2)]
+        return
 
+    def instr_and(self):
+        """REG[A] = AND(REG[A],REG[B])"""
+        self.reg[self.ram_read(self.pc +
+                               1)] &= self.reg[self.ram_read(self.pc + 2)]
+        return
+
+    def instr_xor(self):
+        """REG[A] = XOR(REG[A],REG[B])"""
+        self.reg[self.ram_read(self.pc +
+                               1)] ^= self.reg[self.ram_read(self.pc + 2)]
+        return
+
+    def instr_not(self):
+        """REG[A] = ~REG[A]"""
+        self.reg[self.ram_read(self.pc +
+                               1)] = ~self.reg[self.ram_read(self.pc + 1)]
+        return
+
+    # stacks
     def pop(self):
         """take the value from the top of the stack and load it into the
         register that is specified byself.pc+ 1
         """
         # not quite sure how to handle the underflow
         # of the stack but for now we can hlt
+        #@TODO
         if self.reg[self.sp] >= 0xf3:
             print("STACK UNDERFLOW DETECTED")
             self.hlt()
@@ -173,6 +178,7 @@ class CPU:
         """loads the args from the ram usingself.pc+ 1,2 respectively
         then write the value from the register to the top of the stack then
         decrement the stack and advance the pc"""
+        # @TODO
         if self.reg[self.sp] <= self.pc:
             print("OverFlow Detected: HALTING")
             self.hlt()
@@ -195,52 +201,63 @@ class CPU:
     def call(self):
         # decrement the stack pointer
         self.reg[self.sp] -= 1
-
+        # get the current stack pointer value
         stack_address = self.reg[self.sp]
+        # address of the next instr to return to
         returned_address = self.pc + 2
+        #  write to the stack address with the value of return address
         self.ram_write(stack_address, returned_address)
+        # get the register number from ram
         register_number = self.ram_read(self.pc + 1)
+        # set the current program counter to the value stored in the register
         self.pc = self.reg[register_number]
         return
 
     def ret(self):
+        # pull the return address from the stack and set the current program
+        # counter to that address
         self.pc = self.ram_read(self.reg[self.sp])
+        # increment the stack pointer
         self.reg[self.sp] += 1
         return
 
     # other operators
     def prn(self):
+        """prints value in register PC + 1,
+        then increments the program counter."""
+
         print(self.reg[self.ram_read(self.pc + 1)])
         self.pc += 2
         return
 
+    def pra(self):
+        print(chr(self.reg[self.ram_read(self.pc + 1)]))
+        self.pc += 2
+
     def nop(self):
-        # still going to want to advance the pc
+        """Does nothing, advances the PC"""
         self.pc += 1
         return
 
     def hlt(self):
+        """Signals the run while loop to stop"""
         self.running = False
         self.pc += 1
         return
 
     def jmp(self) -> None:
-        # load the address to jump to
-        reg = self.ram_read(self.pc + 1)
-        # set the new location for pc
-        self.pc = self.reg[reg]
-
+        """Jump to location provided in register"""
+        self.pc = self.reg[self.ram_read(self.pc + 1)]
         return
 
     def ldi(self):
+        """f(A,B) | REG[A] = B, PC +3"""
         self.reg[self.ram_read(self.pc + 1)] = self.ram_read(self.pc + 2)
         self.pc += 3
         return
 
     def st(self):
-        """Takes the value stored in reg_a and writes it to the address that is
-        stored in reg_b then increments theself.pcby three.
-        """
+        """f(A,B) | RAM[REG[B]] = REG[A]"""
         reg_a, reg_b = self.ram_read(self.pc + 1), self.ram_read(self.pc + 2)
         self.ram_write(self.reg[reg_b], self.reg[reg_a])
         self.pc += 3
@@ -297,6 +314,7 @@ class CPU:
         return
 
     def jeq(self):
+        """Jump to address stored in REG[PC +1] if the equals flag (self.fl) is set"""
         if not self.fl & 0b1:
             self.pc += 2
         elif self.fl & 0B1:
@@ -305,6 +323,7 @@ class CPU:
         return
 
     def jne(self):
+        """same as jeq but jumps on not equal"""
         if self.fl & 0b1:
             self.pc += 2
         elif not self.fl & 0b0:
@@ -373,16 +392,16 @@ class CPU:
         return
 
     def inter(self):
-        print("NOT FULLY IMPLEMENTED!!")
-        # issue the interupt number stored in the register
-        # toggle the interuption bool that will trigger the main loop to hook
-        self._w = True
-        # get the interupt number from the register
-        raise_number = self.reg[self.ram_read(self.pc + 1)]
-        print(
-            f"DBG: the value in register {self.ram_read(self.pc + 1)} is {raise_number}"
-        )
-        breakpoint()
+        # if INTS ar disabled do nothing
+        if self._w:
+            pass
+        else:
+            # issue the interupt number stored in the register
+            # toggle the interuption bool that will trigger the main loop to hook
+            self._w = True
+            # get the interupt number from the register
+            interupt_number = self.reg[self.ram_read(self.pc + 1)]
+            self.ram_read()
         return
 
     ###########################################################################
@@ -430,8 +449,35 @@ class CPU:
     def run(self):
         """Starts the main execution of the program"""
         self.running = True
-        self.clock = 0
-
+        self.dispatch = {
+            self.ADD: self.add,
+            self.SUB: self.sub,
+            self.MUL: self.mul,
+            self.DIV: self.div,
+            self.JEQ: self.jeq,
+            self.JNE: self.jne,
+            self.CMP: self.cmp,
+            self.MOD: self.mod,
+            self.LDI: self.ldi,
+            self.PRN: self.prn,
+            self.PRA: self.pra,
+            self.HLT: self.hlt,
+            self.NOP: self.nop,
+            self.PUSH: self.push,
+            self.POP: self.pop,
+            self.CALL: self.call,
+            self.RET: self.ret,
+            self.DEC: self.dec,
+            self.INC: self.inc,
+            self.JMP: self.jmp,
+            self.ST: self.st,
+            self.LD: self.ld,
+            self.INT: self.inter,
+            self.OR: self.instr_or,
+            self.NOT: self.instr_not,
+            self.AND: self.instr_and,
+            self.XOR: self.instr_xor,
+        }
         while self.running:
 
             try:
@@ -443,12 +489,6 @@ class CPU:
                     # so that if i have an infinite loop there is a counter
                     print("CLK: {}".format(self.clock))
                     breakpoint()
-
-                # INTERUPTION HOOK
-                if self._w:
-                    # @TODO add int hook here
-                    pass
-
                 # read instruction and assign the ir register
                 self.ir = self.ram_read(self.pc)
                 # execute instruction
@@ -467,7 +507,6 @@ class CPU:
                 print("KeyBoardInt:")
 
         return None
-
 
     #Prior to instruction fetch, the following steps occur:
     #1. The IM register is bitwise AND-ed with the IS register and the
@@ -552,7 +591,6 @@ class CPU:
     #00010011
     #13
     #```
-    return
 
 
 def main():
@@ -582,4 +620,4 @@ def main():
 
 
 if __name__ == '__main__':
-    testing()
+    main()
