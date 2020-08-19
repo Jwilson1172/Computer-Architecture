@@ -1,0 +1,44 @@
+# instruction 1 - load an array
+0100000000000000 # load array R0,
+0000000000000000
+1000000000000000 # start array
+0000000001100010 # 98
+0000000001100101 # 101
+0000000001100100 # 100
+0000000001011001 # 89
+1000000000000001 # end array
+# instruction 2 & 3 - print the mean of the first array to stdout
+0100000000000010 # MEAN, R0, R1
+0000000000000000
+0000000000000001
+0000000001000111 # PRN R1
+0000000000000001
+# instruction 4 - add a column to the dataset from array
+0100000000000100 # JOIN, R0, ARRAY -> R0
+0000000000000000
+1000000000000000 # start array
+0000000000000000
+0000000000000000
+0000000000000000 # pass label
+0000000000000001 # fail label
+1000000000000001 # end array
+# instruction 5 - print combined array
+0000000001000111 # PRN R0
+0000000000000000
+# instruction 6 - fit the model with the dataset store slope in reg
+0100000000000111 # FIT R0 -> R2
+0000000000000000 # R0
+0000000000000011 # R2
+# instruction 7 - get input from stdin for the value to predict
+0010000000000000 # INPUT, R1
+0000000000000001 # R1
+# instruction 8 - make a prediction using the slope and input given by the user
+0100000000000101 # PRED, R2, R1 -> R0
+0000000000000010
+0000000000000001
+0000000000000000
+# instruction 9 - print the prediction to stdout
+0000000001000111 # PRN R0
+0000000000000000
+0000000000000001 # HLT
+

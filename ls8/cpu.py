@@ -4,6 +4,7 @@ import sys
 from sys import argv
 from time import time
 import numpy as np
+from sklearn.linear_model import LinearRegression
 #from util import CpuMaths
 
 
@@ -141,6 +142,13 @@ class CPU:
 
     LOAD_A = 0b0100000000000000
     MEAN = 0b0100000000000010
+    JOIN = 0b0100000000000100
+
+    INPUT = 0b0010000000000000
+
+    # ML OPS (no not the cool kind)
+    FIT = 0b0100000000000111
+    PRED = 0b0100000000000101
 
     ###########################################################################
     #                        Instruction Functions                            #
@@ -441,7 +449,7 @@ class CPU:
             i += 1
 
         # store the resulting array in the register specified by arg
-        self.reg[register] = a
+        self.reg[register] = a[1:-1]  # clean flags before storing
 
         # since we just went n number of spots collecting memebers of the array
         # we need to skip to the next instruction
@@ -450,15 +458,53 @@ class CPU:
     def mean(self):
         """takes the mean of the array in REG[A] and stores the value at REG[B]"""
         # use numpy to take the mean of the array
-        b = np.mean(self.reg[self.ram_read(self.pc + 1)])
-        # get the register address to store the value
-        reg = self.reg[self.ram_read(self.pc + 2)]
+        a = self.reg[self.ram_read(self.pc + 1)]
+        b = np.mean(a)  # take mean
+        # get the register number to store the value
+        reg = self.ram_read(self.pc + 2)
         # set that register equal to the value
         self.reg[reg] = b
         # increment the pc
         self.pc += 3
 
         return
+
+    def join(self):
+        """Take the array passed in the array flags and append it
+        elementwise to the array in REG[A] in a way that adds the values from
+        the passed array as an additinal column for the array that is stored
+        in the register"""
+        # going to want to take the array in REG[pc + 1] and add a column
+        # onto it using the array that is read from mem
+        register_num = self.ram_read(self.pc + 1)
+        a = self.reg[register_num]
+
+        # load the second array into the register specified by op1
+        # changes the pc to the end of ARRAY
+        self.read_array()
+        a2 = self.reg[register_num]
+
+        # combine the first array with the second array such that a2 is a
+        # col added to the matrix then store that matrix in reg{a}
+        self.reg[register_num] = [[c, c1] for c, c1 in zip(a, a2)]
+
+        # shouldn't need to change the pc since read_array already did that
+        return
+
+    def predict(self):
+
+        pass
+
+    def fit(self):
+        # get the array from reg[A] and assume that the last column is the label
+        data = self.reg[self.ram_read(self.pc + 1)]
+        df = pd.DataFrame(data)
+        target = df.columns.tolist()[:-1]
+        y = df[target]
+        x = df.drop(target, axis=1)
+        self.model = LinearRegression(n_jobs=-1).fit(x, y, fit_intercept=True)
+
+        pass
 
     ###########################################################################
     #                          UTIL FUNCTIONS                                 #
@@ -543,6 +589,9 @@ class CPU:
             self.ARRAY_STOP: self.nop,
             self.LOAD_A: self.read_array,
             self.MEAN: self.mean,
+            self.JOIN: self.join,
+            self.PRED: self.predict,
+            self.FIT: self.fit,
         }
         while self.running:
 
@@ -680,15 +729,8 @@ class CPU:
 
 def main():
     try:
-        # init the cpu
-        if '--DBG' in argv:
-            cpu = CPU(DBG=True, ram_size=4096)
-            # remove dbg flag from argv so it dosent
-            # break loading ls8 files
-            argv.pop('--DBG')
-        else:
-            cpu = CPU(DBG=False, ram_size=4096)
 
+        cpu = CPU(DBG=False, ram_size=4096)
         if len(argv) > 1:
             print("Launching in multi-test mode:\n")
             for test in argv[1:]:
@@ -702,10 +744,11 @@ def main():
                 print("\n")
         else:
             now = time()
-            cpu.load('examples/sctest.ls8')
+            cpu.load('examples/simple_predict.ls8')
             cpu.run()
             later = time()
             print(f"Execution time: {later - now}/sec")
+            breakpoint()
     except Exception as e:
         pass
     return
