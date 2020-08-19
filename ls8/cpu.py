@@ -3,6 +3,7 @@
 import sys
 from sys import argv
 from time import time
+import numpy as np
 #from util import CpuMaths
 
 
@@ -14,6 +15,9 @@ class CPU:
     # something larger to hold larger programs/stacks
     def __init__(self, DBG=False, ram_size=256):
         """Construct a new CPU."""
+        if ram_size >= 4096:
+            self.signed = True
+
         # set to NOP by default
         self.pc = 0
 
@@ -39,7 +43,8 @@ class CPU:
         self.reg = [0] * 8
 
         # setting the stack pointer to the defualt location
-        self.reg[self.sp] = 0xf3
+        # made it scale off of ram size
+        self.reg[self.sp] = ram_size - (256 - 0xf3)
 
         # set the interruption mask and signal as cleared
         self.reg[self.IS] = 0b00000000
@@ -48,6 +53,7 @@ class CPU:
         # from my understanding this part of the ram stores the address to
         # the interuption handler
         self.I_vectors = [0] * 8
+
         # int toggle
         self._w = False
 
@@ -119,6 +125,22 @@ class CPU:
     # coroutines
     RET = 0b00010001
     CALL = 0b01010000
+
+    # 16bit instructions
+    # 0b000000000 0  0  0  0  0  0  0
+    # 0b123456789 10 11 12 13 14 15 16
+
+    # for functions use 0b01
+    # 0b0100000000000000
+
+    # for markers or flags use 0b10
+    # 0b1000000000000000
+
+    ARRAY_START = 0b1000000000000000
+    ARRAY_STOP = 0b1000000000000001
+
+    LOAD_A = 0b0100000000000000
+    MEAN = 0b0100000000000010
 
     ###########################################################################
     #                        Instruction Functions                            #
@@ -404,6 +426,40 @@ class CPU:
             self.ram_read()
         return
 
+    def read_array(self):
+        # reads an array from memory and stores the resulting list object in register specified
+        # read_array R#, ARRAY_START (flag)
+        register = self.ram_read(self.pc + 1)
+        i = 2
+        a = []
+        # starting with the ARRAY_START flag and ending with the STOP flag load
+        while True:
+            next_instr = self.ram_read(self.pc + i)
+            a.append(next_instr)
+            if next_instr == self.ARRAY_STOP:
+                break
+            i += 1
+
+        # store the resulting array in the register specified by arg
+        self.reg[register] = a
+
+        # since we just went n number of spots collecting memebers of the array
+        # we need to skip to the next instruction
+        self.pc = i + 1
+
+    def mean(self):
+        """takes the mean of the array in REG[A] and stores the value at REG[B]"""
+        # use numpy to take the mean of the array
+        b = np.mean(self.reg[self.ram_read(self.pc + 1)])
+        # get the register address to store the value
+        reg = self.reg[self.ram_read(self.pc + 2)]
+        # set that register equal to the value
+        self.reg[reg] = b
+        # increment the pc
+        self.pc += 3
+
+        return
+
     ###########################################################################
     #                          UTIL FUNCTIONS                                 #
     ###########################################################################
@@ -438,9 +494,12 @@ class CPU:
                     address += 1
                 except ValueError:
                     pass
+        # for reloading
+        self._file_fn = fn
+        return
 
-    def reset(self):
-        self.__init__()
+    def reset(self, *args, **kwargs):
+        self.__init__(args, kwargs)
         return
 
     ###########################################################################
@@ -478,25 +537,51 @@ class CPU:
             self.AND: self.instr_and,
             self.XOR: self.instr_xor,
         }
+
+        self.secondary_dispatch = {
+            self.ARRAY_START: self.nop,
+            self.ARRAY_STOP: self.nop,
+            self.LOAD_A: self.read_array,
+            self.MEAN: self.mean,
+        }
         while self.running:
 
             try:
                 # absolute clock counter
                 self.clock += 1
-
                 # DBG HOOK
                 if self.DBG:
                     # so that if i have an infinite loop there is a counter
                     print("CLK: {}".format(self.clock))
                     breakpoint()
+
                 # read instruction and assign the ir register
                 self.ir = self.ram_read(self.pc)
-                # execute instruction
-                self.dispatch[self.ir]()
+                # if the instruction is in the 8-bit table execute the command
+                # from the 8-bit table
+                if self.ir in self.dispatch:
+                    self.dispatch[self.ir]()
+                # or if it's in the 16bit then launch it from
+                # that dispatch table
+                elif self.ir in self.secondary_dispatch:
+                    # if asking for 16-bit function and running in 8-bit mode
+                    # switch to 16-bit mode by increasing the ram alloted to
+                    # the __init__() then reload the program file that was being
+                    # run and run it again
+                    if self.signed is False:
+                        program = self._file_fn
+                        self.__init__(ram_size=4096)
+                        self.load(program)
+                        self.run()
+
+                    self.secondary_dispatch[self.ir]()
+                # if the instr isn't found then raise a targeted exception handler
+                else:
+                    raise KeyError
 
             # adding unknown instr error hook
             except KeyError as ke:
-                print(f"error instruction {self.ir} not in dispatch table")
+                print(f"unknown command: {int(self.ir, base=2)}")
                 self.running = False
 
             # adding keyboard int
@@ -596,7 +681,14 @@ class CPU:
 def main():
     try:
         # init the cpu
-        cpu = CPU(DBG=False)
+        if '--DBG' in argv:
+            cpu = CPU(DBG=True, ram_size=4096)
+            # remove dbg flag from argv so it dosent
+            # break loading ls8 files
+            argv.pop('--DBG')
+        else:
+            cpu = CPU(DBG=False, ram_size=4096)
+
         if len(argv) > 1:
             print("Launching in multi-test mode:\n")
             for test in argv[1:]:
@@ -610,7 +702,7 @@ def main():
                 print("\n")
         else:
             now = time()
-            cpu.load('examples/stack.ls8')
+            cpu.load('examples/sctest.ls8')
             cpu.run()
             later = time()
             print(f"Execution time: {later - now}/sec")
