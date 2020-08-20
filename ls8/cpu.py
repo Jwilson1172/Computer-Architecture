@@ -3,9 +3,36 @@
 import sys
 from sys import argv
 from time import time
+from time import sleep
 import numpy as np
 from sklearn.linear_model import LinearRegression
-#from util import CpuMaths
+
+# for keyboard int
+# and timer int
+import threading
+
+
+class KeyboardThread(threading.Thread):
+    def __init__(self, input_cbk=None, name="keyboard-input-thread"):
+        self.input_cbk = input_cbk
+        super(KeyboardThread, self).__init__(name=name)
+        self.start()
+
+    def run(self):
+        while True:
+            self.input_cbk(input())  # waits to get input + Return
+
+
+class TimerThread(threading.Thread):
+    def __init__(self, call_back=None, name="timer-loop-thread"):
+        self.call_back = call_back
+        super(TimerThread, self).__init__(name=name)
+        self.start()
+
+    def run(self):
+        while true:
+            time.sleep(1)
+            self.timer += 1
 
 
 class CPU:
@@ -16,6 +43,10 @@ class CPU:
     # something larger to hold larger programs/stacks
     def __init__(self, DBG=False, ram_size=256):
         """Construct a new CPU."""
+
+        # start the Keyboard thread
+        self.kthread = KeyboardThread(my_callback)
+
         if ram_size >= 4096:
             self.signed = True
 
@@ -45,7 +76,7 @@ class CPU:
 
         # setting the stack pointer to the defualt location
         # made it scale off of ram size
-        self.reg[self.sp] = ram_size - (256 - 0xf3)
+        self.reg[self.sp] = ram_size - (256 - 0xF3)
 
         # set the interruption mask and signal as cleared
         self.reg[self.IS] = 0b00000000
@@ -158,26 +189,22 @@ class CPU:
     def instr_or(self):
         """Perform a bitwise-OR between the values in registerA and registerB,
         storing the result in registerA"""
-        self.reg[self.ram_read(self.pc +
-                               1)] |= self.reg[self.ram_read(self.pc + 2)]
+        self.reg[self.ram_read(self.pc + 1)] |= self.reg[self.ram_read(self.pc + 2)]
         return
 
     def instr_and(self):
         """REG[A] = AND(REG[A],REG[B])"""
-        self.reg[self.ram_read(self.pc +
-                               1)] &= self.reg[self.ram_read(self.pc + 2)]
+        self.reg[self.ram_read(self.pc + 1)] &= self.reg[self.ram_read(self.pc + 2)]
         return
 
     def instr_xor(self):
         """REG[A] = XOR(REG[A],REG[B])"""
-        self.reg[self.ram_read(self.pc +
-                               1)] ^= self.reg[self.ram_read(self.pc + 2)]
+        self.reg[self.ram_read(self.pc + 1)] ^= self.reg[self.ram_read(self.pc + 2)]
         return
 
     def instr_not(self):
         """REG[A] = ~REG[A]"""
-        self.reg[self.ram_read(self.pc +
-                               1)] = ~self.reg[self.ram_read(self.pc + 1)]
+        self.reg[self.ram_read(self.pc + 1)] = ~self.reg[self.ram_read(self.pc + 1)]
         return
 
     # stacks
@@ -187,8 +214,8 @@ class CPU:
         """
         # not quite sure how to handle the underflow
         # of the stack but for now we can hlt
-        #@TODO
-        if self.reg[self.sp] >= 0xf3:
+        # @TODO
+        if self.reg[self.sp] >= 0xF3:
             print("STACK UNDERFLOW DETECTED")
             self.hlt()
             return
@@ -347,7 +374,7 @@ class CPU:
         """Jump to address stored in REG[PC +1] if the equals flag (self.fl) is set"""
         if not self.fl & 0b1:
             self.pc += 2
-        elif self.fl & 0B1:
+        elif self.fl & 0b1:
             reg_a = self.ram_read(self.pc + 1)
             self.pc = self.reg[reg_a]
         return
@@ -416,23 +443,14 @@ class CPU:
         # Loads registerA with the value at the memory address
         # stored in registerB.
         self.reg[self.ram_read(self.pc + 1)] = self.ram_read(
-            self.reg[self.ram_read(self.pc + 2)])
+            self.reg[self.ram_read(self.pc + 2)]
+        )
         self.pc += 3
 
         return
 
     def inter(self):
-        # if INTS ar disabled do nothing
-        if self._w:
-            pass
-        else:
-            # issue the interupt number stored in the register
-            # toggle the interuption bool that will trigger the main loop to hook
-            self._w = True
-            # get the interupt number from the register
-            interupt_number = self.reg[self.ram_read(self.pc + 1)]
-            self.ram_read()
-        return
+        pass
 
     def read_array(self):
         # reads an array from memory and stores the resulting list object in register specified
@@ -510,7 +528,8 @@ class CPU:
     #                          UTIL FUNCTIONS                                 #
     ###########################################################################
     def trace(self):
-        print(f"""
+        print(
+            f"""
         pc: {self.pc}\
 
         main loop iter: {self.clock}
@@ -520,7 +539,8 @@ class CPU:
         registry values:\n{self.reg}\n
         stack(top):\n{self.ram_read(self.reg[self.sp])}
 
-        """)
+        """
+        )
         return
 
     def load(self, fn):
@@ -531,7 +551,7 @@ class CPU:
 
         """
         address = 0
-        with open(fn, 'rt') as f:
+        with open(fn, "rt") as f:
             for line in f:
                 try:
                     line = line.split("#", 1)[0]
@@ -642,89 +662,89 @@ class CPU:
 
         return None
 
-    #Prior to instruction fetch, the following steps occur:
-    #1. The IM register is bitwise AND-ed with the IS register and the
+    # Prior to instruction fetch, the following steps occur:
+    # 1. The IM register is bitwise AND-ed with the IS register and the
     #   results stored as `maskedInterrupts`.
-    #2. Each bit of `maskedInterrupts` is checked, starting from 0 and going
+    # 2. Each bit of `maskedInterrupts` is checked, starting from 0 and going
     #   up to the 7th bit, one for each interrupt.
-    #3. If a bit is found to be set, follow the next sequence of steps. Stop
+    # 3. If a bit is found to be set, follow the next sequence of steps. Stop
     #   further checking of `maskedInterrupts`.
-    #If a bit is set:
-    #1. Disable further interrupts.
-    #2. Clear the bit in the IS register.
-    #3. The `PC` register is pushed on the stack.
-    #4. The `FL` register is pushed on the stack.
-    #5. Registers R0-R6 are pushed on the stack in that order.
-    #6. The address (_vector_ in interrupt terminology) of the appropriate
+    # If a bit is set:
+    # 1. Disable further interrupts.
+    # 2. Clear the bit in the IS register.
+    # 3. The `PC` register is pushed on the stack.
+    # 4. The `FL` register is pushed on the stack.
+    # 5. Registers R0-R6 are pushed on the stack in that order.
+    # 6. The address (_vector_ in interrupt terminology) of the appropriate
     #   handler is looked up from the interrupt vector table.
-    #7. Set the PC is set to the handler address.
-    #While an interrupt is being serviced (between the handler being called
-    #and the `IRET`), further interrupts are disabled.
+    # 7. Set the PC is set to the handler address.
+    # While an interrupt is being serviced (between the handler being called
+    # and the `IRET`), further interrupts are disabled.
     #
-    #See `IRET`, below, for returning from an interrupt.
+    # See `IRET`, below, for returning from an interrupt.
     #
     #### Interrupt numbers
     #
-    #* 0: Timer interrupt. This interrupt triggers once per second.
-    #* 1: Keyboard interrupt. This interrupt triggers when a key is pressed.
+    # * 0: Timer interrupt. This interrupt triggers once per second.
+    # * 1: Keyboard interrupt. This interrupt triggers when a key is pressed.
     #  The value of the key pressed is stored in address `0xF4`.
     #
-    #```
+    # ```
     #      top of RAM
-    #+-----------------------+
-    #| FF  I7 vector         |    Interrupt vector table
-    #| FE  I6 vector         |
-    #| FD  I5 vector         |
-    #| FC  I4 vector         |
-    #| FB  I3 vector         |
-    #| FA  I2 vector         |
-    #| F9  I1 vector         |
-    #| F8  I0 vector         |
-    #| F7  Reserved          |
-    #| F6  Reserved          |
-    #| F5  Reserved          |
-    #| F4  Key pressed       |    Holds the most recent key pressed on the keyboard
-    #| F3  Start of Stack    |
-    #| F2  [more stack]      |    Stack grows down
-    #| ...                   |
-    #| 01  [more program]    |
-    #| 00  Program entry     |    Program loaded upward in memory starting at 0
-    #+-----------------------+
+    # +-----------------------+
+    # | FF  I7 vector         |    Interrupt vector table
+    # | FE  I6 vector         |
+    # | FD  I5 vector         |
+    # | FC  I4 vector         |
+    # | FB  I3 vector         |
+    # | FA  I2 vector         |
+    # | F9  I1 vector         |
+    # | F8  I0 vector         |
+    # | F7  Reserved          |
+    # | F6  Reserved          |
+    # | F5  Reserved          |
+    # | F4  Key pressed       |    Holds the most recent key pressed on the keyboard
+    # | F3  Start of Stack    |
+    # | F2  [more stack]      |    Stack grows down
+    # | ...                   |
+    # | 01  [more program]    |
+    # | 00  Program entry     |    Program loaded upward in memory starting at 0
+    # +-----------------------+
     #    bottom of RAM
-    #```
+    # ```
     ### INT
     #
-    #`INT register`
+    # `INT register`
     #
-    #Issue the interrupt number stored in the given register.
+    # Issue the interrupt number stored in the given register.
     #
-    #This will set the _n_th bit in the `IS` register to the value in the given
-    #register.
+    # This will set the _n_th bit in the `IS` register to the value in the given
+    # register.
     #
-    #Machine code:
-    #```
-    #01010010 00000rrr
-    #52 0r
-    #```
+    # Machine code:
+    # ```
+    # 01010010 00000rrr
+    # 52 0r
+    # ```
     #
     #### IRET
     #
-    #`IRET`
+    # `IRET`
     #
-    #Return from an interrupt handler.
+    # Return from an interrupt handler.
     #
-    #The following steps are executed:
+    # The following steps are executed:
     #
-    #1. Registers R6-R0 are popped off the stack in that order.
-    #2. The `FL` register is popped off the stack.
-    #3. The return address is popped off the stack and stored in `PC`.
-    #4. Interrupts are re-enabled
+    # 1. Registers R6-R0 are popped off the stack in that order.
+    # 2. The `FL` register is popped off the stack.
+    # 3. The return address is popped off the stack and stored in `PC`.
+    # 4. Interrupts are re-enabled
     #
-    #Machine code:
-    #```
-    #00010011
-    #13
-    #```
+    # Machine code:
+    # ```
+    # 00010011
+    # 13
+    # ```
 
 
 def main():
@@ -744,7 +764,7 @@ def main():
                 print("\n")
         else:
             now = time()
-            cpu.load('examples/simple_predict.ls8')
+            cpu.load("examples/simple_predict.ls8")
             cpu.run()
             later = time()
             print(f"Execution time: {later - now}/sec")
@@ -754,5 +774,5 @@ def main():
     return
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
