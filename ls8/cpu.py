@@ -1,38 +1,22 @@
 """CPU functionality."""
 
-import sys
 from sys import argv
+import time
 from time import time
-from time import sleep
 import numpy as np
 from sklearn.linear_model import LinearRegression
 
 # for keyboard int
 # and timer int
+import sys
 import threading
+from util import Queue
 
 
-class KeyboardThread(threading.Thread):
-    def __init__(self, input_cbk=None, name="keyboard-input-thread"):
-        self.input_cbk = input_cbk
-        super(KeyboardThread, self).__init__(name=name)
-        self.start()
-
-    def run(self):
-        while True:
-            self.input_cbk(input())  # waits to get input + Return
-
-
-class TimerThread(threading.Thread):
-    def __init__(self, call_back=None, name="timer-loop-thread"):
-        self.call_back = call_back
-        super(TimerThread, self).__init__(name=name)
-        self.start()
-
-    def run(self):
-        while true:
-            time.sleep(1)
-            self.timer += 1
+def add_input(input_queue):
+    while True:
+        input_queue.enqueue(sys.stdin.read(1))
+    return
 
 
 class CPU:
@@ -43,9 +27,11 @@ class CPU:
     # something larger to hold larger programs/stacks
     def __init__(self, DBG=False, ram_size=256):
         """Construct a new CPU."""
+        self.input_queue = Queue()
 
-        # start the Keyboard thread
-        self.kthread = KeyboardThread(my_callback)
+        self.input_thread = threading.Thread(target=add_input,
+                                             args=(self.input_queue, ))
+        self.input_thread.daemon = True
 
         if ram_size >= 4096:
             self.signed = True
@@ -181,6 +167,18 @@ class CPU:
     FIT = 0b0100000000000111
     PRED = 0b0100000000000101
 
+    # lazy conv
+    lazy_table = {
+        0: 1,
+        1: 2,
+        2: 4,
+        3: 8,
+        4: 16,
+        5: 32,
+        6: 64,
+        7: 128,
+    }
+
     ###########################################################################
     #                        Instruction Functions                            #
     ###########################################################################
@@ -189,22 +187,26 @@ class CPU:
     def instr_or(self):
         """Perform a bitwise-OR between the values in registerA and registerB,
         storing the result in registerA"""
-        self.reg[self.ram_read(self.pc + 1)] |= self.reg[self.ram_read(self.pc + 2)]
+        self.reg[self.ram_read(self.pc +
+                               1)] |= self.reg[self.ram_read(self.pc + 2)]
         return
 
     def instr_and(self):
         """REG[A] = AND(REG[A],REG[B])"""
-        self.reg[self.ram_read(self.pc + 1)] &= self.reg[self.ram_read(self.pc + 2)]
+        self.reg[self.ram_read(self.pc +
+                               1)] &= self.reg[self.ram_read(self.pc + 2)]
         return
 
     def instr_xor(self):
         """REG[A] = XOR(REG[A],REG[B])"""
-        self.reg[self.ram_read(self.pc + 1)] ^= self.reg[self.ram_read(self.pc + 2)]
+        self.reg[self.ram_read(self.pc +
+                               1)] ^= self.reg[self.ram_read(self.pc + 2)]
         return
 
     def instr_not(self):
         """REG[A] = ~REG[A]"""
-        self.reg[self.ram_read(self.pc + 1)] = ~self.reg[self.ram_read(self.pc + 1)]
+        self.reg[self.ram_read(self.pc +
+                               1)] = ~self.reg[self.ram_read(self.pc + 1)]
         return
 
     # stacks
@@ -443,13 +445,17 @@ class CPU:
         # Loads registerA with the value at the memory address
         # stored in registerB.
         self.reg[self.ram_read(self.pc + 1)] = self.ram_read(
-            self.reg[self.ram_read(self.pc + 2)]
-        )
+            self.reg[self.ram_read(self.pc + 2)])
         self.pc += 3
 
         return
 
     def inter(self):
+        # this will set the Nth bit of the IS register where N is Stored in PC + 1
+        b = self.reg[self.pc + 1]
+        # some fancy list comp to deal with the 'nth bit' thing
+        self.IS += int(''.join(['0' if x != b else '1' for x in range(8)]), 2)
+
         pass
 
     def read_array(self):
@@ -528,8 +534,7 @@ class CPU:
     #                          UTIL FUNCTIONS                                 #
     ###########################################################################
     def trace(self):
-        print(
-            f"""
+        print(f"""
         pc: {self.pc}\
 
         main loop iter: {self.clock}
@@ -539,8 +544,7 @@ class CPU:
         registry values:\n{self.reg}\n
         stack(top):\n{self.ram_read(self.reg[self.sp])}
 
-        """
-        )
+        """)
         return
 
     def load(self, fn):
@@ -568,11 +572,17 @@ class CPU:
         self.__init__(args, kwargs)
         return
 
+    def kbi_callback(self, inp):
+        self.IS += 0b1
+        return
+
     ###########################################################################
     #                              MAIN                                       #
     ###########################################################################
     def run(self):
         """Starts the main execution of the program"""
+        # start the keyboard interupt deamon
+        self.input_thread.start()
         self.running = True
         self.dispatch = {
             self.ADD: self.add,
@@ -624,6 +634,10 @@ class CPU:
                     print("CLK: {}".format(self.clock))
                     breakpoint()
 
+                if self.IS != 0:
+                    # bitwise AND interuption_signal reg and interuption_mask reg
+                    self.maskedint = self.im & self.IS
+
                 # read instruction and assign the ir register
                 self.ir = self.ram_read(self.pc)
                 # if the instruction is in the 8-bit table execute the command
@@ -652,13 +666,6 @@ class CPU:
             except KeyError as ke:
                 print(f"unknown command: {int(self.ir, base=2)}")
                 self.running = False
-
-            # adding keyboard int
-            except KeyboardInterrupt as kbi:
-                self.running = False
-                # @TODO figure out what goes here
-
-                print("KeyBoardInt:")
 
         return None
 
@@ -764,13 +771,12 @@ def main():
                 print("\n")
         else:
             now = time()
-            cpu.load("examples/simple_predict.ls8")
+            cpu.load("examples/sctest.ls8")
             cpu.run()
             later = time()
-            print(f"Execution time: {later - now}/sec")
-            breakpoint()
+            print("Execution time: {}/sec".format(round(later - now, 4)))
     except Exception as e:
-        pass
+        print(e)
     return
 
 

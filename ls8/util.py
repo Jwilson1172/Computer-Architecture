@@ -1,27 +1,16 @@
-import numpy as np
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score
-from cpu import CPU
+class Queue():
+    def __init__(self):
+        self.queue = []
 
+    def enqueue(self, value):
+        self.queue.append(value)
 
-class CpuMaths(object):
-    """wrapper function for various maths from numpy, pandas, statistics"""
-    def __init__(self, CPU=None):
-        self.value = None
-        self.cpu = CPU
-        return
+    def dequeue(self):
+        if self.size() > 0:
+            return self.queue.pop(0)
+        else:
+            return None
 
-    def fnd_mean(self, ):
-        return np.mean(a)
-
-    def stddev(self, a):
-        return np.std(a)
-
-
-if __name__ == '__main__':
-    cpu = CPU()
-    m = CpuMaths()
-    a = np.zeros((2, 512 * 512), dtype=np.float32)
-    a[0, :] = 1.0
-    a[1, :] = 0.1
-    print(np.mean(a))
+    def size(self):
+        return len(self.queue)
+12
